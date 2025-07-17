@@ -59,19 +59,21 @@ def calculate_bollinger_bands(values, period=20, std_dev=2):
 
 # === TREND ===
 def detect_market_trend(symbol):
-    def fetch_closes(symbol, tf):
-        url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={tf}&limit=60"
+    def fetch_closes(symbol, tf_code):
+        url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval={tf_code}&limit=60"
         try:
             r = requests.get(url, timeout=5)
-            return [float(x[4]) for x in r.json()]
+            data = r.json().get("result", {}).get("list", [])
+            return [float(x[4]) for x in data[::-1]]
         except:
             return []
 
     trend_info = {}
-    for tf in ['1h', '4h', '15m']:
-        closes = fetch_closes(symbol, tf)
+    timeframes = [('60', '1h'), ('240', '4h'), ('15', '15m')]
+    for tf_code, label in timeframes:
+        closes = fetch_closes(symbol, tf_code)
         if len(closes) < 50:
-            trend_info[tf] = 'neutral'
+            trend_info[label] = 'neutral'
             continue
         ema9 = ema(closes, 9)[-1]
         ema21 = ema(closes, 21)[-1]
@@ -79,11 +81,11 @@ def detect_market_trend(symbol):
         close = closes[-1]
 
         if close > ma200 and ema9 > ema21:
-            trend_info[tf] = 'bullish'
+            trend_info[label] = 'bullish'
         elif close < ma200 and ema9 < ema21:
-            trend_info[tf] = 'bearish'
+            trend_info[label] = 'bearish'
         else:
-            trend_info[tf] = 'neutral'
+            trend_info[label] = 'neutral'
     return trend_info
 
 def is_trade_allowed(side, trend_info):
@@ -96,28 +98,42 @@ def is_trade_allowed(side, trend_info):
         return False
     return True
 
-# === SIGNAL SCORE ===
+# === SIGNAL SCORING ===
 def compute_score(s):
     score = 0
     trend_info = detect_market_trend(s['symbol'])
     bull = list(trend_info.values()).count('bullish')
     bear = list(trend_info.values()).count('bearish')
-    score += 10 if bull == 3 or bear == 3 else 5 if bull == 2 or bear == 2 else 0
 
-    if s['side'] == 'LONG' and 45 < s['rsi'] < 70: score += 10
-    elif s['side'] == 'SHORT' and 30 < s['rsi'] < 55: score += 10
+    score += 20 if bull == 3 or bear == 3 else 10 if bull == 2 or bear == 2 else 0
 
-    if s['macd_hist'] and ((s['macd_hist'] > 0 and s['side'] == 'LONG') or (s['macd_hist'] < 0 and s['side'] == 'SHORT')):
+    if s['side'] == 'LONG' and 50 < s['rsi'] < 65:
+        score += 10
+    elif s['side'] == 'SHORT' and 35 < s['rsi'] < 50:
         score += 10
 
-    if s["bb_breakout"] == "YES": score += 5
-    if s.get("vol_spike"): score += 10
-    score += s["confidence"] * 0.3
+    if s['macd_hist']:
+        if s['macd_hist'] > 0 and s['side'] == 'LONG':
+            score += 10
+        elif s['macd_hist'] < 0 and s['side'] == 'SHORT':
+            score += 10
+
+    if s["bb_breakout"] == "YES":
+        score += 5
+    if s.get("vol_spike"):
+        score += 10
+
+    score += s["confidence"] * 0.4
+
     rr = TP_PERCENT / SL_PERCENT
     score += 10 if rr >= 2 else 5 if rr >= 1.5 else 0
+
+    if trend_info['1h'] == trend_info['4h'] == trend_info['15m'] == s['trend']:
+        score += 10
+
     return round(score, 2)
 
-# === SIGNAL BUILDER ===
+# === SIGNAL GENERATION ===
 def build_signal(name, condition, confidence, regime, trend_info, close, symbol, tf, rsi, macd_hist, bb_upper, bb_lower, volumes):
     if not condition:
         return None
@@ -153,8 +169,8 @@ def build_signal(name, condition, confidence, regime, trend_info, close, symbol,
     signal["score"] = compute_score(signal)
     return signal
 
-# === ANALYZE ===
-def analyze(symbol, tf="1h"):
+# === ANALYSIS ENGINE ===
+def analyze(symbol, tf="60"):
     data = fetch_ohlcv(symbol, tf)
     if len(data) < 60: return []
     highs = [x[0] for x in data]
@@ -195,34 +211,40 @@ def analyze(symbol, tf="1h"):
 
     return signals
 
-# === SYMBOLS ===
-def fetch_ohlcv(symbol, interval='1h', limit=100):
-    url = f"https://fapi.binance.com/fapi/v1/klines?symbol={symbol}&interval={interval}&limit={limit}"
+# === FETCH DATA FROM BYBIT ===
+def fetch_ohlcv(symbol, interval='60', limit=100):
+    url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval={interval}&limit={limit}"
     try:
         r = requests.get(url, timeout=5)
-        return [[float(x[2]), float(x[3]), float(x[4]), float(x[5]), float(x[1])] for x in r.json()]
+        data = r.json().get("result", {}).get("list", [])
+        return [[float(x[2]), float(x[3]), float(x[4]), float(x[5]), float(x[1])] for x in data[::-1]]
     except Exception as e:
         print(f"[ERROR] {symbol}: {e}")
         return []
 
 def get_symbols(limit=100):
     try:
-        r = requests.get("https://fapi.binance.com/fapi/v1/exchangeInfo", timeout=5)
-        return [s['symbol'] for s in r.json()['symbols'] if s['contractType'] == 'PERPETUAL' and 'USDT' in s['symbol']][:limit]
+        r = requests.get("https://api.bybit.com/v5/market/instruments-info?category=linear", timeout=5)
+        data = r.json().get("result", {}).get("list", [])
+        return [s['symbol'] for s in data if s['symbol'].endswith('USDT')][:limit]
     except Exception as e:
         print(f"[ERROR] Symbols: {e}")
         return []
 
-# === DISPLAY ===
+# === DISPLAY & PDF EXPORT ===
 def score_label(score):
     if score >= 85: return "Elite"
     elif score >= 70: return "Strong"
     elif score >= 50: return "Average"
     return "Weak"
 
+def confidence_tag(conf):
+    if conf >= 90: return "High Conviction"
+    if conf >= 80: return "Solid Setup"
+    return "Watchlist"
 
 def format_signal(s, i=None):
-    head = f"{i}. {s['symbol']} [{s['timeframe']}] | {s['side']} | {s['strategy']}" if i else s['symbol']
+    head = f"{i}. {s['symbol']} [{s['timeframe']}m] | {s['side']} | {s['strategy']}" if i else s['symbol']
     return "\n".join([
         head,
         "-" * 60,
@@ -234,30 +256,24 @@ def format_signal(s, i=None):
         f"Trend        : {s['trend']} | Regime: {s['regime']} | RSI: {s['rsi']}",
         f"MACD Hist    : {s['macd_hist']} | BB Breakout: {s['bb_breakout']}",
         f"Score        : {s['score']} / 100 | Rank: {score_label(s['score'])}",
+        f"Tag          : {confidence_tag(s['confidence'])}",
         f"Timestamp    : {s['timestamp']}"
     ])
 
-# === PDF EXPORT ===
-
 def save_pdf(all_signals, top5):
     pdf = FPDF()
-
-    # First page - Top 5 Signals
     pdf.add_page()
     pdf.set_font("Arial", size=14)
     pdf.cell(0, 10, "Top 5 Signals", ln=True, align="C")
     pdf.set_font("Arial", size=9)
-
     for i, s in enumerate(top5, 1):
         pdf.multi_cell(0, 5, format_signal(s, i))
         pdf.ln(1)
 
-    # Second page - All Signals
     pdf.add_page()
     pdf.set_font("Arial", size=14)
     pdf.cell(0, 10, "All Signals", ln=True, align="C")
     pdf.set_font("Arial", size=9)
-
     for i, s in enumerate(all_signals, 1):
         pdf.multi_cell(0, 5, format_signal(s, i))
         pdf.ln(1)
@@ -267,7 +283,7 @@ def save_pdf(all_signals, top5):
 
 # === MAIN ===
 def main():
-    print("📊 Scanning Binance Futures Signals...\n")
+    print("📊 Scanning Bybit Futures Signals...\n")
     all_signals = []
     for symbol in get_symbols():
         all_signals.extend(analyze(symbol))
@@ -277,7 +293,7 @@ def main():
         return
 
     filtered = [s for s in all_signals if s['rsi'] > 45 and s['regime'] in ['trend', 'scalp', 'mean_reversion']]
-    top5 = sorted(filtered, key=lambda x: (x['score'], x['forecast_pnl']), reverse=True)[:5]
+    top5 = sorted(filtered, key=lambda x: (x['score'] * 0.7 + x['forecast_pnl'] * 0.3), reverse=True)[:5]
 
     for i, s in enumerate(top5, 1):
         print(format_signal(s, i))
