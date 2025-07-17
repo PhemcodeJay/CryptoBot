@@ -253,6 +253,7 @@ def main():
         if signals:
             signals.sort(key=lambda x: x['Score'], reverse=True)
             top5 = signals[:5]
+
             for s in top5:
                 print(f"""
 ==================== {s['Symbol']} ====================
@@ -263,19 +264,33 @@ def main():
 ⏰ TIME: {s['Time']}
 =========================================================
 """)
+
             pdf = SignalPDF()
             pdf.add_page()
             pdf.add_signals(signals[:20])
             fname = f"signals_{datetime.now(tz_utc3).strftime('%H%M')}.pdf"
             pdf.output(fname)
             print(f"📄 PDF saved: {fname}")
+            print("♻️ Rescanning in 15 minutes...\n")
 
             # Discord Notification
-            top_msg = "\n".join([f"{s['Symbol']} | {s['Type']} {s['Side']} | Score: {s['Score']}%" for s in top5])
-            send_discord(f"📊 Top 5 Bybit Signals\n{top_msg}")
+            top_msg = "\n\n".join([
+                f"""==================== {s['Symbol']} ====================
+📊 TYPE: {s['Type']}     📈 SIDE: {s['Side']}     🏆 SCORE: {s['Score']}%
+💵 ENTRY: {s['Entry']}   🎯 TP: {s['TP']}         🛡️ SL: {s['SL']}
+💱 MARKET: {s['Market']} 📍 BB: {s['BB Slope']}    🔄 Trail: {s['Trail']}
+⚖️ MARGIN: {s['Margin']} ⚠️ LIQ: {s['Liq']}
+⏰ TIME: {s['Time']}
+========================================================="""
+                for s in top5
+            ])
+            send_discord(f"📊 **Top 5 Bybit Signals**\n\n{top_msg}")
+            print("♻️ Message Sent to Discord...\n")
+
         else:
             print("⚠️ No valid signals found")
             print("♻️ Rescanning in 15 minutes...\n")
+
         sleep(900)
 
 if __name__ == "__main__":
