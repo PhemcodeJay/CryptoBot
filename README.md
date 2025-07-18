@@ -1,155 +1,143 @@
-# CryptoBot
-CryptoBot
-Here's a complete `README.md` for your script. It includes detailed installation steps for Python, dependencies, environment setup, and instructions to run the script.
+--
+
+## 📊 Bybit Multi-Timeframe Signal Scanner
+
+This Python script scans the **top 100 USDT Perpetual Futures** on Bybit every 15 minutes, using multi-timeframe technical analysis. It generates high-confidence trading signals, exports them as a PDF report, and optionally sends the top 5 picks to **Discord**.
 
 ---
 
-````markdown
-# 📈 Binance Futures Top 5 Signal Scanner & Auto Trader
+### 🚀 Features
 
-This script scans the top 200 Binance USDT Futures pairs, generates trading signals based on technical indicators (EMA, MACD, RSI, Bollinger Bands), and optionally executes trades using your Binance API keys. It also produces a combined signal report as a PDF.
+* ✅ Scans top 100 USDT perpetual futures by 24h volume
+* 📈 Multi-timeframe analysis (`15m`, `1h`, `4h`)
+* 📊 Uses popular indicators:
 
-## ⚙️ Features
-
-- Scans 200 Binance Futures pairs
-- Generates technical signals and ranks top 5 by ROI
-- Creates a combined PDF report of signals
-- Executes real trades with risk-controlled settings
-- Uses trailing stop loss and take-profit
-- Automatically saves trade logs in JSON
-
----
-
-## ✅ Requirements
-
-- **Python** 3.10 or higher
-- Binance Futures API keys (optional for live trading)
+  * EMA 9, EMA 21, SMA 20
+  * RSI, MACD, Bollinger Bands
+  * ATR-based volatility filter
+* 🧠 Classifies signals into `Trend`, `Swing`, or `Scalp`
+* 📤 Sends Top 5 signals to Discord
+* 📄 Exports Top 20 signals to a styled PDF report
+* 🔂 Rescans every 15 minutes (looping mode)
 
 ---
 
-## 🧰 Installation
+### 📦 Requirements
 
-### 1. Install Python
+* Python 3.8+
+* `requests`
+* `fpdf`
+* `pytz`
 
-Download and install Python from the official site:  
-👉 [https://www.python.org/downloads](https://www.python.org/downloads)
-
-During installation, check `Add Python to PATH`.
-
-### 2. Clone or Download This Project
+Install dependencies:
 
 ```bash
-git clone https://github.com/yourusername/binance-top5-scanner.git
-cd binance-top5-scanner
-````
+pip install requests fpdf pytz
+```
 
-Or download the `.zip` and extract it.
+---
 
-### 3. Create and Activate a Virtual Environment (Optional but Recommended)
+### ⚙️ Configuration
+
+You can customize the following constants in the script:
+
+```python
+RISK_PCT = 0.15                 # Risk % per trade
+ACCOUNT_BALANCE = 100          # Account balance in USD
+LEVERAGE = 20                  # Leverage used
+ENTRY_BUFFER_PCT = 0.002       # Buffer for trailing entries
+MIN_VOLUME = 1000              # Minimum 1h volume
+MIN_ATR_PCT = 0.001            # Minimum ATR % filter
+RSI_ZONE = (20, 80)            # RSI inclusion zone
+INTERVALS = ['15', '60', '240']# Timeframes to evaluate
+MAX_SYMBOLS = 100              # Max number of symbols to scan
+DISCORD_WEBHOOK_URL = "..."    # Discord webhook (optional)
+```
+
+---
+
+### 📂 Output
+
+* PDF file: `signals_HHMM.pdf` (updated every scan)
+* Discord message: Top 5 signals with full metadata
+
+---
+
+### 📋 Signal Fields
+
+Each signal includes:
+
+* **Symbol**: e.g., BTCUSDT
+* **Type**: Trend, Swing, or Scalp
+* **Side**: LONG or SHORT
+* **Score**: Confidence score (0-100)
+* **Entry**: Optimal entry price
+* **TP/SL**: Take profit and stop loss
+* **Trail**: Trailing price for entry
+* **Market**: Current market price
+* **BB Slope**: Bollinger Band direction (Up/Down/No)
+* **Margin/Liq**: Calculated using leverage
+* **Time**: Timestamp in UTC+3
+
+---
+
+### 🛠️ How It Works
+
+1. Gets top 100 Bybit USDT pairs sorted by volume.
+2. For each symbol:
+
+   * Fetches latest 200 candles per interval.
+   * Computes indicators.
+   * Filters based on volume, ATR, and RSI.
+   * Confirms trend alignment across timeframes.
+   * Assigns signal score.
+3. Displays top 5 in terminal.
+4. Exports top 20 to a PDF.
+5. Sends top 5 to Discord.
+6. Waits 15 minutes and repeats.
+
+---
+
+### 🖥️ Running the Script
 
 ```bash
-python -m venv venv
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-source venv/bin/activate
+python signal_scanner.py
 ```
 
-### 4. Install Dependencies
+You’ll see terminal logs like:
 
-```bash
-pip install -r requirements.txt
 ```
+🔍 Scanning Bybit USDT Futures for filtered signals...
 
-If `requirements.txt` is missing, install manually:
-
-```bash
-pip install python-dotenv pandas numpy matplotlib fpdf ta-binance
+==================== BTCUSDT ====================
+📊 TYPE: Trend     📈 SIDE: LONG     🏆 SCORE: 87.0%
+💵 ENTRY: 58652.12 🎯 TP: 59541.91   🛡️ SL: 57762.33
+💱 MARKET: 58723.0 📍 BB: Up         🔄 Trail: 58539.22
+⚖️ MARGIN: 0.75    ⚠️ LIQ: 55719.51
+⏰ TIME: 2025-07-18 13:00 UTC+3
 ```
 
 ---
 
-## 🔐 Environment Setup
+### 🌐 Discord Notifications
 
-Create a `.env` file in the root folder and paste your Binance API credentials:
+To enable, replace `DISCORD_WEBHOOK_URL` in the script with your own webhook URL.
 
-```
-# .env
-MODE=live
-BINANCE_API_KEY=your_api_key_here
-BINANCE_API_SECRET=your_secret_here
-```
-
-> ⚠️ If no API keys are provided, the bot runs in **backtest mode** (no trades are placed).
+You can create a webhook from your Discord server under:
+**Server Settings → Integrations → Webhooks → New Webhook**
 
 ---
 
-## 🚀 How to Run
+### 📌 Notes
 
-```bash
-python your_script_name.py
-```
-
-It will:
-
-* Scan symbols on Binance Futures
-* Generate trading signals
-* Save top 5 and others in a PDF report in `/output/reports`
-* Save each trade log as JSON in `/output/trades`
-* Place real trades **if API keys are provided**
+* Runs indefinitely, every 15 minutes.
+* If no valid signals are found, it will wait and retry.
+* PDF report and Discord alert are only generated if at least one signal passes the filters.
 
 ---
 
-## 📂 Output Files
+### 📜 License
 
-* `/output/reports/` — Combined PDF signal reports
-* `/output/trades/` — JSON logs of executed trades
-
----
-
-## ⚠️ Risk Management & Config
-
-| Setting           | Value         |
-| ----------------- | ------------- |
-| Max Risk/Trade    | 1.0 USDT      |
-| Take Profit       | 0.25 USDT     |
-| Stop Loss         | 0.15 USDT     |
-| Leverage          | 20x           |
-| Confidence Thresh | 80%           |
-| Trailing SL       | 1.5% callback |
-
-These are hardcoded in the script but can be easily edited.
+This project is open source and free to use under the MIT License.
 
 ---
-
-## 📌 Notes
-
-* Uses `matplotlib` in non-GUI (`Agg`) mode for compatibility.
-* Threads up to 20 symbols in parallel.
-* Supports future updates like adding charts in PDFs or more indicators.
-* Built for high-speed signal scanning and automated compounding.
-
----
-
-## 🧠 Coming Soon
-
-* GUI Dashboard (HTML + JS + WebSocket)
-* Chart-based reports
-* Liquidation risk sniping
-* AI-based signal confirmation
-
----
-
-## 📞 Contact
-
-For support or collaboration, contact:
-**Scholarstica** - CryptoPilot Kenya 🇰🇪
-📧 [scholar@zawadifarm.ai](mailto:scholar@zawadifarm.ai)
-
----
-
-## 📜 License
-
-MIT License
-
-```
